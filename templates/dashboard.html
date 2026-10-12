@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Campus AI Security</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    body { background: #0d0d0d; color: #eee; font-family: -apple-system, sans-serif; margin: 0; padding: 24px; }
+    h1 { color: #fff; margin-bottom: 4px; }
+    .subtitle { color: #888; margin-top: 0; margin-bottom: 20px; font-size: 14px; }
+
+    #video-wrap { position: relative; max-width: 900px; }
+    #video { width: 100%; border: 2px solid #2a2a2a; border-radius: 8px; display: block; background: #000; }
+    #live-dot { position: absolute; top: 14px; right: 14px; display: flex; align-items: center; gap: 6px;
+                background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 20px; font-size: 12px; }
+    #live-dot span.dot { width: 8px; height: 8px; border-radius: 50%; background: #ff4d4d; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    #stats { display: flex; gap: 14px; margin: 18px 0; max-width: 900px; flex-wrap: wrap; }
+    .stat { background: #1a1a1a; padding: 12px 18px; border-radius: 8px; border: 1px solid #2a2a2a; flex: 1; min-width: 110px; }
+    .stat .label { font-size: 12px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat .value { font-size: 24px; font-weight: 700; margin-top: 2px; }
+    .stat.fall .value { color: #ffa64d; }
+    .stat.fight .value { color: #ff4d4d; }
+    .stat.fire .value { color: #ff7a1a; }
+    .stat.smoking .value { color: #b06fff; }
+    .stat.crowd_gathering .value { color: #4dd2ff; }
+    .stat.total .value { color: #fff; }
+
+    table { width: 100%; max-width: 900px; border-collapse: collapse; margin-top: 10px; }
+    th { text-align: left; padding: 10px 8px; color: #999; font-size: 12px; text-transform: uppercase;
+         border-bottom: 1px solid #2a2a2a; }
+    td { padding: 10px 8px; border-bottom: 1px solid #1e1e1e; font-size: 14px; }
+
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 12px;
+             font-weight: 600; font-size: 13px; }
+    .badge.fall { background: rgba(255,166,77,0.15); color: #ffa64d; }
+    .badge.fight { background: rgba(255,77,77,0.15); color: #ff4d4d; }
+    .badge.fire { background: rgba(255,122,26,0.15); color: #ff7a1a; }
+    .badge.smoking { background: rgba(176,111,255,0.15); color: #b06fff; }
+    .badge.crowd_gathering { background: rgba(77,210,255,0.15); color: #4dd2ff; }
+
+    .status-open { color: #ff4d4d; font-weight: 600; }
+    .status-false_alarm { color: #666; text-decoration: line-through; }
+
+    button { background: #262626; color: #eee; border: 1px solid #3a3a3a; padding: 5px 12px;
+             border-radius: 6px; cursor: pointer; font-size: 12px; }
+    button:hover { background: #333; }
+  </style>
+</head>
+<body>
+  <h1>Campus AI Security</h1>
+  <p class="subtitle">Live monitoring &mdash; Fall / Fight / Fire / Smoking / Crowd Gathering detection</p>
+
+  <div id="video-wrap">
+    <img id="video" src="" alt="waiting for feed..." />
+    <div id="live-dot"><span class="dot"></span> LIVE</div>
+  </div>
+
+  <div id="stats">
+    <div class="stat total"><div class="label">Total Events</div><div class="value" id="total">0</div></div>
+    <div class="stat fall"><div class="label">Falls</div><div class="value" id="fallCount">0</div></div>
+    <div class="stat fight"><div class="label">Fights</div><div class="value" id="fightCount">0</div></div>
+    <div class="stat fire"><div class="label">Fire</div><div class="value" id="fireCount">0</div></div>
+    <div class="stat smoking"><div class="label">Smoking</div><div class="value" id="smokingCount">0</div></div>
+    <div class="stat crowd_gathering"><div class="label">Crowd Gatherings</div><div class="value" id="crowdGatheringCount">0</div></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Time</th><th>Type</th><th>Confidence</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody id="eventLog"></tbody>
+  </table>
+
+  <script>
+    const socket = io();
+    const counts = { total: 0, fall: 0, fight: 0, fire: 0, smoking: 0, crowd_gathering: 0 };
+
+    const LABELS = {
+      fall: "Fall Detected",
+      fight: "Fight Detected",
+      fire: "Fire Detected",
+      smoking: "Smoking Detected",
+      crowd_gathering: "Crowd Gathering",
+    };
+
+    socket.on("frame_update", (data) => {
+      document.getElementById("video").src = "data:image/jpeg;base64," + data.image;
+    });
+
+    socket.on("new_event", (event) => {
+      counts.total++;
+      if (counts[event.event_type] !== undefined) counts[event.event_type]++;
+
+      document.getElementById("total").innerText = counts.total;
+      document.getElementById("fallCount").innerText = counts.fall;
+      document.getElementById("fightCount").innerText = counts.fight;
+      document.getElementById("fireCount").innerText = counts.fire;
+      document.getElementById("smokingCount").innerText = counts.smoking;
+      document.getElementById("crowdGatheringCount").innerText = counts.crowd_gathering;
+
+      const type = event.event_type;
+      const label = LABELS[type] || type;
+      const time = new Date(event.timestamp * 1000).toLocaleTimeString();
+
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${time}</td>
+        <td><span class="badge ${type}">${label}</span></td>
+        <td>${(event.confidence * 100).toFixed(1)}%</td>
+        <td class="status-open" id="status-${event.event_id}">open</td>
+        <td><button onclick="markFalseAlarm('${event.event_id}')">Mark False Alarm</button></td>
+      `;
+      document.getElementById("eventLog").prepend(row);
+    });
+
+    function markFalseAlarm(eventId) {
+      const el = document.getElementById("status-" + eventId);
+      el.innerText = "false_alarm";
+      el.className = "status-false_alarm";
+    }
+  </script>
+</body>
+</html>
